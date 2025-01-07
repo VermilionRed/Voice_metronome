@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -26,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,8 +42,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -56,18 +58,26 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MetronomeBody(context: Context = LocalContext.current){
+fun MetronomeBody(context: Context = LocalContext.current) {
     var tempo by remember { mutableStateOf(120) } // Темп в BPM
     var isPlaying by remember { mutableStateOf(false) } // Состояние метронома
     var currentBeat by remember { mutableStateOf(0) } // Текущая доля ритма
     val beatsPerMeasure = 4 // Количество долей в такте (4/4)
     val scope = rememberCoroutineScope()
+    // Звуковые ресурсы для разных долей
+    val soundResources = listOf(
+        R.raw.goal_1, // Звук для сильной доли (первая доля)
+        R.raw.goal_2,   // Звук для слабых долей
+        R.raw.goal_2,
+        R.raw.goal_2
+    )
+    // Размеры точек для разных долей
+    val dotSizes = listOf(60.dp, 40.dp, 40.dp, 40.dp) // Первая точка больше
 
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing),
-        // ☝️ This remains System UI bars.
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -77,10 +87,14 @@ fun MetronomeBody(context: Context = LocalContext.current){
             verticalArrangement = Arrangement.Center
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 for (i in 0 until beatsPerMeasure) {
-                    BeatDot(isActive = i == currentBeat)
+                    BeatDot(
+                        isActive = i == currentBeat,
+                        size = dotSizes[i] // Размер точки зависит от её позиции
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -104,43 +118,41 @@ fun MetronomeBody(context: Context = LocalContext.current){
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
+            Slider(
+                value = tempo.toFloat(),
+                onValueChange = { tempo = it.toInt() },
+                valueRange = 40f..200f,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = {
                 isPlaying = !isPlaying
-                if (!isPlaying) {
+                if (isPlaying) {
+                    // Воспроизведение первого звука сразу при старте
+                    playSound(context, soundResources[currentBeat])
+                } else {
                     currentBeat = 0 // Сбрасываем текущую долю при остановке
                 }
             }) {
                 Text(if (isPlaying) "Стоп" else "Старт")
             }
         }
+
         // Логика метронома
-        if (isPlaying) {
-            LaunchedEffect(tempo) {
-                while (isPlaying) {
-                    currentBeat = (currentBeat + 1) % beatsPerMeasure // Переход к следующей доле
-                    scope.launch {
-                        val mediaPlayer = MediaPlayer.create(context, R.raw.cowbell)
-                        mediaPlayer.start()
-                        mediaPlayer.setOnCompletionListener {
-                            it.release()
-                        }
-                    }
-                    delay(60000L / tempo) // Задержка в зависимости от темпа
-                }
-            }
-        }
-        // Сброс метронома при изменении темпа
-        LaunchedEffect(tempo) {
+        LaunchedEffect(isPlaying, tempo) {
             if (isPlaying) {
-                isPlaying = false // Останавливаем метроном
-                currentBeat = 0 // Сбрасываем текущую долю
-                isPlaying = true // Перезапускаем метроном
+                while (isPlaying) {
+                    delay(60000L / tempo) // Задержка в зависимости от темпа
+                    currentBeat = (currentBeat + 1) % beatsPerMeasure // Переход к следующей доле
+                    playSound(context, soundResources[currentBeat])
+                }
             }
         }
     }
 }
+
 @Composable
-fun BeatDot(isActive: Boolean) {
+fun BeatDot(isActive: Boolean, size: Dp) {
     val animatedColor by animateFloatAsState(
         targetValue = if (isActive) 1f else 0f, // Анимация цвета
         animationSpec = tween(durationMillis = 100)
@@ -148,7 +160,7 @@ fun BeatDot(isActive: Boolean) {
 
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(size)
             .clip(CircleShape)
             .background(
                 Color.LightGray.copy(alpha = 1f - animatedColor) // Серый цвет для неактивной точки
@@ -157,6 +169,15 @@ fun BeatDot(isActive: Boolean) {
                 Color.Red.copy(alpha = animatedColor) // Красный цвет для активной точки
             )
     )
+}
+
+// Функция для воспроизведения звука
+fun playSound(context: Context, soundResource: Int) {
+    val mediaPlayer = MediaPlayer.create(context, soundResource)
+    mediaPlayer.start()
+    mediaPlayer.setOnCompletionListener {
+        it.release()
+    }
 }
 
 @Preview(showBackground = true)
